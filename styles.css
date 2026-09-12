@@ -16,6 +16,8 @@ body {
     color: #1f2937;
 }
 
+/* ---------- Panneau latéral ---------- */
+
 #sidebar {
     width: 260px;
     min-width: 180px;
@@ -79,10 +81,14 @@ body {
 }
 
 .filter-section {
-    flex: 1;
+    flex: 0 0 auto;
     min-height: 0;
     display: flex;
     flex-direction: column;
+}
+
+.filter-section-grow {
+    flex: 1 1 0;
 }
 
 .filter-section h4 {
@@ -91,6 +97,33 @@ body {
     text-transform: uppercase;
     color: #4b5563;
     margin-bottom: 6px;
+}
+
+#year-section[hidden] {
+    display: none;
+}
+
+#year-select {
+    width: 100%;
+    padding: 6px 8px;
+    font: inherit;
+    font-size: 13px;
+    color: #111827;
+    background: #fff;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: border-color .15s ease, box-shadow .15s ease;
+}
+
+#year-select:hover {
+    border-color: #adb5bd;
+}
+
+#year-select:focus-visible {
+    outline: none;
+    border-color: #1a73e8;
+    box-shadow: 0 0 0 2px rgba(26, 115, 232, .2);
 }
 
 .filter-list {
@@ -139,6 +172,8 @@ body {
     color: #1a73e8;
 }
 
+/* ---------- Carte ---------- */
+
 #map {
     flex: 1;
     min-width: 0;
@@ -150,9 +185,60 @@ body {
     background: #dbeafe;
 }
 
+.school-marker {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 2px solid #fff;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, .4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform .12s ease;
+}
+
+.leaflet-marker-icon:hover .school-marker,
+.leaflet-marker-icon:focus-visible .school-marker {
+    transform: scale(1.15);
+}
+
+.leaflet-marker-icon:focus-visible {
+    outline: 2px solid #1a73e8;
+    outline-offset: 2px;
+    border-radius: 50%;
+}
+
+.school-marker-never {
+    border-style: dashed;
+    border-color: #6b7280;
+    box-shadow: none;
+}
+
+.school-marker-badge {
+    background: rgba(40, 40, 40, .55);
+    border-radius: 50%;
+    width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-weight: 700;
+    font-size: 11px;
+    line-height: 1;
+}
+
+/* ---------- Bulle de survol ---------- */
+
+.leaflet-popup-content {
+    max-height: 300px;
+    overflow-y: auto;
+    min-width: 200px;
+}
+
 .leaflet-popup-content h3 {
     font-size: 15px;
-    margin-bottom: 8px;
+    margin-bottom: 2px;
     color: #1a1a1a;
 }
 
@@ -174,11 +260,290 @@ body {
     color: #222;
 }
 
-.leaflet-popup-content {
-    max-height: 300px;
-    overflow-y: auto;
-    min-width: 200px;
+.popup-year {
+    font-size: 12px;
+    color: #6b7280;
+    margin-bottom: 6px;
 }
+
+.popup-empty {
+    font-size: 13px;
+    color: #6b7280;
+    font-style: italic;
+    margin: 4px 0;
+}
+
+.popup-more {
+    margin-top: 10px;
+    width: 100%;
+    padding: 6px 10px;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    color: #1a73e8;
+    background: #eef4fd;
+    border: 1px solid #cfe0fb;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background .15s ease, color .15s ease;
+}
+
+.popup-more:hover {
+    background: #1a73e8;
+    color: #fff;
+    border-color: #1a73e8;
+}
+
+.popup-more:focus-visible {
+    outline: 2px solid #1a73e8;
+    outline-offset: 2px;
+}
+
+.popup-content-single-domain ul {
+    padding-left: 18px;
+    margin: 0;
+    list-style-position: outside;
+}
+
+.popup-content-single-domain .project-item {
+    display: list-item;
+    margin-bottom: 6px;
+}
+
+.popup-content-single-domain .project-bullet-content {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+}
+
+.popup-content-single-domain .project-name,
+.popup-content-single-domain .project-levels {
+    display: block;
+    width: 100%;
+}
+
+.popup-content-single-domain .project-levels {
+    font-size: .95em;
+    color: #4b5563;
+    white-space: normal;
+}
+
+/* ---------- Modale historique ---------- */
+
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
+    background: rgba(17, 24, 39, .45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+}
+
+.modal-overlay.hidden {
+    display: none;
+}
+
+.modal {
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, .3);
+    width: min(1100px, 100%);
+    max-height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.modal-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 14px 16px;
+    border-bottom: 1px solid #e5e7eb;
+    flex-shrink: 0;
+}
+
+.modal-titles h2 {
+    font-size: 16px;
+    color: #111827;
+    line-height: 1.3;
+}
+
+.modal-titles p {
+    font-size: 12px;
+    color: #6b7280;
+    margin-top: 2px;
+}
+
+.modal-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+}
+
+.modal-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #4b5563;
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+}
+
+.modal-toggle input {
+    accent-color: #1a73e8;
+    cursor: pointer;
+}
+
+#modal-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #6b7280;
+    padding: 4px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    transition: background .15s ease, color .15s ease;
+}
+
+#modal-close:hover {
+    background: #f3f4f6;
+    color: #111827;
+}
+
+#modal-close:focus-visible {
+    outline: 2px solid #1a73e8;
+    outline-offset: 1px;
+}
+
+.modal-body {
+    overflow: auto;
+    flex: 1;
+    min-height: 0;
+}
+
+.history-table {
+    border-collapse: separate;
+    border-spacing: 0;
+    width: 100%;
+    font-size: 13px;
+}
+
+.history-table th,
+.history-table td {
+    border-bottom: 1px solid #e5e7eb;
+    border-right: 1px solid #f1f3f5;
+    padding: 8px 10px;
+    vertical-align: top;
+    text-align: left;
+}
+
+.history-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: #f8f9fa;
+    font-size: 12px;
+    font-weight: 600;
+    color: #4b5563;
+    white-space: nowrap;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.history-table .col-domain {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: #fff;
+    min-width: 170px;
+    font-weight: 600;
+    color: #111827;
+    border-right: 1px solid #dee2e6;
+}
+
+.history-table thead .col-domain {
+    z-index: 3;
+    background: #f8f9fa;
+}
+
+.history-table tbody tr:hover td,
+.history-table tbody tr:hover .col-domain {
+    background: #f8fbff;
+}
+
+.history-table .is-current {
+    background: #eef4fd;
+}
+
+.history-table thead .is-current {
+    background: #dce9fb;
+    color: #1a4d9e;
+}
+
+.history-table tr.row-empty .col-domain {
+    color: #9ca3af;
+    font-weight: 500;
+}
+
+.history-table tr.row-empty td {
+    background: #fcfcfd;
+}
+
+.history-table tr.row-empty:hover td {
+    background: #f8fbff;
+}
+
+.history-table .cell-empty {
+    color: #d1d5db;
+    text-align: center;
+}
+
+.history-table tfoot td {
+    position: sticky;
+    bottom: 0;
+    background: #f8f9fa;
+    font-weight: 600;
+    color: #4b5563;
+    font-size: 12px;
+    border-top: 1px solid #dee2e6;
+}
+
+.history-project {
+    margin-bottom: 6px;
+}
+
+.history-project:last-child {
+    margin-bottom: 0;
+}
+
+.history-project-name {
+    display: block;
+    color: #111827;
+}
+
+.history-project-levels {
+    display: block;
+    font-size: 11px;
+    color: #6b7280;
+    margin-top: 1px;
+}
+
+.modal-note {
+    padding: 10px 16px;
+    font-size: 12px;
+    color: #6b7280;
+    border-top: 1px solid #e5e7eb;
+}
+
+/* ---------- États ---------- */
 
 #no-config {
     position: absolute;
@@ -238,4 +603,16 @@ body {
 
 #toggle-hidden-only[aria-pressed="true"] #icon-hidden-mode {
     background: #9ca3af;
+}
+
+@media (max-width: 640px) {
+    .modal-header {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+    }
+
+    .modal-actions {
+        justify-content: space-between;
+    }
 }

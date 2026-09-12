@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Saisie d'un projet artistique</title>
+    <link rel="stylesheet" href="styles.css" />
+</head>
+
+<body>
+
+    <main class="page">
+
+        <form id="project-form" class="card" novalidate>
+            <div class="card-header">
+                <h1>Saisie d'un projet</h1>
+                <p>Chaque enregistrement crée une ligne. Un même établissement peut porter plusieurs projets la
+                    même année.</p>
+            </div>
+
+            <div class="field">
+                <label for="school-input">École <span class="required" aria-hidden="true">*</span></label>
+                <div class="combo">
+                    <input type="text" id="school-input" role="combobox" aria-expanded="false"
+                        aria-controls="school-list" aria-autocomplete="list" aria-describedby="school-hint"
+                        autocomplete="off" placeholder="Nom, commune ou UAI…" />
+                    <ul id="school-list" class="combo-list" role="listbox" aria-label="Résultats" hidden></ul>
+                </div>
+                <p class="hint" id="school-hint">La recherche ignore les accents et la casse.</p>
+                <div id="school-selected" class="school-card" hidden></div>
+                <p class="error" id="school-error" hidden></p>
+            </div>
+
+            <div class="field">
+                <label for="year-select">Année scolaire <span class="required" aria-hidden="true">*</span></label>
+                <select id="year-select"></select>
+            </div>
+
+            <div class="field">
+                <label for="title-input">Intitulé du projet <span class="required" aria-hidden="true">*</span></label>
+                <input type="text" id="title-input" maxlength="200" autocomplete="off"
+                    placeholder="Intitulé tel qu'il apparaîtra sur la carte" />
+                <p class="error" id="title-error" hidden></p>
+            </div>
+
+            <fieldset class="field">
+                <legend>Niveaux <span class="required" aria-hidden="true">*</span></legend>
+                <div class="chips" id="levels"></div>
+                <p class="hint" id="levels-hint">Sélectionnez une école pour voir ses effectifs par niveau.</p>
+                <p class="error" id="levels-error" hidden></p>
+            </fieldset>
+
+            <fieldset class="field">
+                <legend>Domaines <span class="required" aria-hidden="true">*</span></legend>
+                <div class="chips" id="domains"></div>
+                <p class="hint">L'intitulé est recopié dans la colonne de chaque domaine coché.</p>
+                <p class="error" id="domains-error" hidden></p>
+            </fieldset>
+
+            <div class="actions">
+                <button type="submit" id="submit-btn" class="btn btn-primary">Enregistrer le projet</button>
+                <button type="button" id="reset-btn" class="btn btn-ghost">Vider le formulaire</button>
+            </div>
+
+            <p class="status" id="status" role="status" aria-live="polite"></p>
+        </form>
+
+        <section class="card" id="existing-card" hidden>
+            <div class="card-header">
+                <h2 id="existing-title">Déjà saisi</h2>
+                <p id="existing-subtitle"></p>
+            </div>
+            <div id="existing-list"></div>
+        </section>
+
+    </main>
+
+    <div id="boot-error" class="boot-error" hidden>
+        <strong>Widget indisponible</strong>
+        <span id="boot-error-text"></span>
+    </div>
+
+    <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+    <script src="../shared/search-text.js"></script>
+    <script src="../shared/grist-columns.js"></script>
+    <script src="script.js"></script>
+</body>
+
+</html>

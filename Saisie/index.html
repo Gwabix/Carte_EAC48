@@ -47,7 +47,10 @@
             <fieldset class="field">
                 <legend>Niveaux <span class="required" aria-hidden="true">*</span></legend>
                 <div class="chips" id="levels"></div>
-                <p class="hint" id="levels-hint">Sélectionnez une école pour voir ses effectifs par niveau.</p>
+                <div class="hint-row">
+                    <p class="hint" id="levels-hint">Sélectionnez une école pour voir ses effectifs par niveau.</p>
+                    <button type="button" id="counts-btn" class="link-btn" hidden>Saisir/modifier les effectifs</button>
+                </div>
                 <p class="error" id="levels-error" hidden></p>
             </fieldset>
 
@@ -76,6 +79,23 @@
 
     </main>
 
+    <dialog id="counts-dialog" class="dialog" aria-labelledby="counts-title" aria-describedby="counts-subtitle">
+        <form id="counts-form" class="dialog-form" novalidate>
+            <div class="card-header">
+                <h2 id="counts-title">Effectifs de l'école</h2>
+                <p id="counts-subtitle"></p>
+            </div>
+            <p class="hint" id="counts-note" hidden></p>
+            <div class="counts-grid" id="counts-grid"></div>
+            <p class="hint">Nombre d'élèves par niveau. Laisser vide si l'effectif n'est pas connu.</p>
+            <p class="error" id="counts-error" role="alert" hidden></p>
+            <div class="actions">
+                <button type="submit" id="counts-save" class="btn btn-primary">Enregistrer les effectifs</button>
+                <button type="button" id="counts-cancel" class="btn btn-ghost">Annuler</button>
+            </div>
+        </form>
+    </dialog>
+
     <div id="boot-error" class="boot-error" hidden>
         <strong>Widget indisponible</strong>
         <span id="boot-error-text"></span>
@@ -84,6 +104,7 @@
     <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
     <script src="../shared/search-text.js"></script>
     <script src="../shared/grist-columns.js"></script>
+    <script src="../shared/school-years.js"></script>
     <script src="script.js"></script>
 </body>
 

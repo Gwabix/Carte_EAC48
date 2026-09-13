@@ -9,7 +9,7 @@
 body {
     font-family: system-ui, sans-serif;
     font-size: 14px;
-    background: #f3f4f6;
+    background: #1f2937;
     color: #1f2937;
     color-scheme: light;
     min-height: 100vh;
@@ -296,6 +296,42 @@ select.is-invalid {
     color: #b45309;
 }
 
+.hint-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+}
+
+/* Action rare : un lien discret plutôt qu'un bouton. */
+.link-btn {
+    background: none;
+    border: none;
+    padding: 2px 4px;
+    border-radius: 4px;
+    font: inherit;
+    font-size: 12px;
+    color: #6b7280;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    cursor: pointer;
+    transition: color .15s ease;
+}
+
+.link-btn:hover {
+    color: #1a73e8;
+}
+
+.link-btn:focus-visible {
+    outline: 2px solid #1a73e8;
+    outline-offset: 1px;
+}
+
+.link-btn[hidden] {
+    display: none;
+}
+
 /* ---------- Actions ---------- */
 
 .actions {
@@ -429,6 +465,88 @@ select.is-invalid {
     font-size: 13px;
     color: #6b7280;
     font-style: italic;
+}
+
+/* ---------- Fenêtre des effectifs ---------- */
+
+.dialog {
+    width: min(460px, calc(100vw - 32px));
+    max-height: calc(100vh - 32px);
+    margin: auto;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    background: #fff;
+    color: #1f2937;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, .25);
+}
+
+.dialog::backdrop {
+    background: rgba(17, 24, 39, .55);
+}
+
+.dialog[open] {
+    animation: dialog-in .15s ease-out;
+}
+
+@keyframes dialog-in {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .dialog[open] {
+        animation: none;
+    }
+}
+
+.dialog-form {
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.counts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+    gap: 10px;
+}
+
+.count-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.count-field label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #4b5563;
+}
+
+input[type="number"] {
+    width: 100%;
+    padding: 7px 8px;
+    font: inherit;
+    font-size: 14px;
+    font-variant-numeric: tabular-nums;
+    color: #111827;
+    background: #fff;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    transition: border-color .15s ease, box-shadow .15s ease;
+}
+
+input[type="number"]:hover {
+    border-color: #adb5bd;
+}
+
+input[type="number"]:focus-visible {
+    outline: none;
+    border-color: #1a73e8;
+    box-shadow: 0 0 0 3px rgba(26, 115, 232, .18);
 }
 
 /* ---------- Erreur de démarrage ---------- */

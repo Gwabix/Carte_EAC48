@@ -12,6 +12,10 @@
  * On écrit 1 dans les drapeaux TPS2, PS2, MS2… et dans ASH ; la formule en
  * déduit la liste de choix, et les colonnes TPS, PS, MS… y puisent l'effectif
  * de l'école. C'est cet effectif que la carte lit pour filtrer les niveaux.
+ *
+ * La table Ecoles a une ligne par école et par année scolaire : le projet
+ * référence la ligne de SON année, pour que ses effectifs restent ceux de
+ * l'année du projet (voir shared/school-years.js).
  */
 
 (function () {
@@ -54,9 +58,13 @@
         { name: 'ASH', flag: 'ASH', count: null }
     ];
 
-    const SCHOOL_FIELDS = ['UAI', 'Nom', 'Complement', 'Commune', 'Circo', 'Code_postal'];
+    const SCHOOL_FIELDS = ['UAI', 'Nom', 'Complement', 'Commune', 'Circo', 'Code_postal', 'Annee'];
+    const MAX_COUNT = 999;
 
+    let schoolIndex = null;
     let schools = [];
+    let writableCountColumns = new Set();
+    let savingCounts = false;
     let projects = [];
     let levels = LEVELS;
     let domains = DOMAINS;
@@ -86,10 +94,7 @@
     }
 
     function currentSchoolYear() {
-        const now = new Date();
-        const year = now.getFullYear();
-        const month = now.getMonth() + 1;
-        return month <= 7 ? `${year - 1}-${year}` : `${year}-${year + 1}`;
+        return window.SchoolYears.currentSchoolYear();
     }
 
     function bootError(message) {
@@ -150,23 +155,30 @@
         return Array.isArray(values) ? values : [];
     }
 
+    // Lit toutes les lignes de Ecoles, toutes années confondues. La liste
+    // proposée à la recherche en est extraite par refreshSchoolList().
     async function loadSchools() {
         const data = await grist.docApi.fetchTable(TABLE_SCHOOLS);
         const ids = columnValues(data, 'id');
-        const list = [];
+        const records = [];
 
         for (let i = 0; i < ids.length; i += 1) {
+            // `counts` : nombre ou null (effectif non renseigné), pour que la
+            // fenêtre des effectifs distingue une case vide d'un zéro.
             const school = { id: Number(ids[i]), counts: {} };
 
             for (const field of SCHOOL_FIELDS) {
                 school[field] = text(columnValues(data, field)[i]);
             }
-            for (const level of levels) {
+            for (const level of LEVELS) {
                 if (level.count) {
-                    school.counts[level.name] = toCount(columnValues(data, level.count)[i]);
+                    const raw = columnValues(data, level.count)[i];
+                    school.counts[level.name] = raw === null || raw === undefined || raw === '' ? null : toCount(raw);
                 }
             }
 
+            school.uai = school.UAI;
+            school.year = school.Annee;
             school.label = [school.Nom, school.Complement].filter(Boolean).join(' ');
             school.meta = [school.Commune, school.UAI].filter(Boolean).join(' · ');
             school.haystack = normalize(
@@ -176,12 +188,32 @@
             school.sortKey = normalize(school.Commune + ' ' + school.Nom);
 
             if (school.label || school.UAI) {
-                list.push(school);
+                records.push(school);
             }
         }
 
+        schoolIndex = window.SchoolYears.buildIndex(records);
+    }
+
+    // Écoles existant l'année choisie, et école retenue ramenée à la ligne de
+    // cette année. Retourne false si l'école retenue n'existe pas cette année.
+    function refreshSchoolList() {
+        const year = el.yearSelect.value;
+        const list = schoolIndex ? schoolIndex.schoolsFor(year) : [];
         list.sort((a, b) => a.sortKey.localeCompare(b.sortKey, 'fr'));
         schools = list;
+
+        if (!selectedSchool) {
+            return true;
+        }
+        const next = schoolIndex ? schoolIndex.resolve(selectedSchool.key, year) : null;
+        if (!next) {
+            return false;
+        }
+        if (next !== selectedSchool) {
+            selectSchool(next);
+        }
+        return true;
     }
 
     async function loadProjects() {
@@ -334,7 +366,7 @@
             const count = selectedSchool.counts[level.name] || 0;
             const badge = document.createElement('small');
             badge.className = 'chip-count';
-            badge.textContent = count > 0 ? String(count) : 'aucun élève';
+            badge.textContent = count > 0 ? String(count) : '0';
             chip.appendChild(badge);
 
             if (count === 0) {
@@ -343,8 +375,9 @@
         });
 
         el.levelsHint.textContent = selectedSchool
-            ? 'Les effectifs indiqués sont ceux de l\'école dans la table Ecoles.'
+            ? `Effectifs de l'école en ${selectedSchool.year || 'année non renseignée'}.`
             : 'Sélectionnez une école pour voir ses effectifs par niveau.';
+        el.countsBtn.hidden = !selectedSchool || countLevels().length === 0;
     }
 
     /* ------------------------------------------------------------------
@@ -412,6 +445,7 @@
                 meta.textContent = school.meta;
 
                 option.append(name, meta);
+                option.addEventListener('mouseenter', () => highlightOption(index));
                 option.addEventListener('mousedown', (event) => {
                     // mousedown plutôt que click : le blur de l'input fermerait
                     // la liste avant que le click ne soit délivré.
@@ -424,6 +458,10 @@
 
         el.schoolList.hidden = false;
         el.schoolInput.setAttribute('aria-expanded', 'true');
+
+        // Le premier résultat est toujours mis en avant : ce que valide
+        // Entrée est ainsi visible avant d'appuyer.
+        highlightOption(0);
     }
 
     function highlightOption(index) {
@@ -492,12 +530,17 @@
      * Projets déjà saisis
      * ---------------------------------------------------------------- */
 
+    // Projets de l'école l'année choisie, quelle que soit la ligne de Ecoles
+    // qu'ils référencent : l'école est reconnue par son UAI.
     function existingRows() {
         if (!selectedSchool) {
             return [];
         }
         const year = el.yearSelect.value;
-        return projects.filter((row) => row.school === selectedSchool.id && row.year === year);
+        return projects.filter((row) => {
+            const school = schoolIndex ? schoolIndex.byId.get(row.school) : null;
+            return school && school.key === selectedSchool.key && row.year === year;
+        });
     }
 
     function renderExisting() {
@@ -670,6 +713,134 @@
         }
     }
 
+    /* ------------------------------------------------------------------
+     * Effectifs de l'école
+     *
+     * Modifie la ligne de Ecoles de l'école retenue pour l'année choisie. Les
+     * projets de cette année référencent cette ligne : leurs colonnes
+     * d'effectifs suivent. Ceux des autres années ne changent pas.
+     * ---------------------------------------------------------------- */
+
+    function countLevels() {
+        return LEVELS.filter((level) => level.count && writableCountColumns.has(level.count));
+    }
+
+    function openCountsDialog() {
+        if (!selectedSchool) {
+            return;
+        }
+
+        const year = el.yearSelect.value;
+        el.countsSubtitle.textContent = `${selectedSchool.label || selectedSchool.UAI} — ${selectedSchool.year || 'année non renseignée'}`;
+
+        // Ligne d'une autre année : la table ne connaît pas l'année choisie
+        // (antérieure à la colonne Annee). On le dit plutôt que de le taire.
+        const otherYear = selectedSchool.year !== year;
+        el.countsNote.hidden = !otherYear;
+        el.countsNote.textContent = otherYear
+            ? `La table des écoles n'a pas de ligne pour ${year} : ce sont les effectifs de ${selectedSchool.year || 'la ligne sans année'} qui seront modifiés.`
+            : '';
+
+        el.countsGrid.textContent = '';
+        for (const level of countLevels()) {
+            const id = `count-${level.name}`;
+            const field = document.createElement('div');
+            field.className = 'count-field';
+
+            const label = document.createElement('label');
+            label.htmlFor = id;
+            label.textContent = level.name;
+
+            const input = document.createElement('input');
+            input.type = 'number';
+            input.id = id;
+            input.name = level.count;
+            input.min = '0';
+            input.max = String(MAX_COUNT);
+            input.step = '1';
+            input.inputMode = 'numeric';
+            const current = selectedSchool.counts[level.name];
+            input.value = current === null || current === undefined ? '' : String(current);
+            input.addEventListener('input', () => {
+                input.classList.remove('is-invalid');
+                setFieldError(el.countsError, null, '');
+            });
+
+            field.append(label, input);
+            el.countsGrid.appendChild(field);
+        }
+
+        setFieldError(el.countsError, null, '');
+        el.countsSave.disabled = false;
+        el.countsDialog.showModal();
+        const first = el.countsGrid.querySelector('input');
+        if (first) {
+            first.focus();
+            first.select();
+        }
+    }
+
+    function readCounts() {
+        const fields = {};
+        let firstInvalid = null;
+
+        for (const input of el.countsGrid.querySelectorAll('input')) {
+            const raw = input.value.trim();
+            // Un champ number rejeté par le navigateur (« 12a ») rend une valeur
+            // vide : badInput le distingue d'un champ réellement vide.
+            if (raw === '' && !input.validity.badInput) {
+                fields[input.name] = null;
+                continue;
+            }
+            if (/^\d{1,3}$/.test(raw) && Number(raw) <= MAX_COUNT) {
+                fields[input.name] = Number(raw);
+                continue;
+            }
+            input.classList.add('is-invalid');
+            firstInvalid = firstInvalid || input;
+        }
+
+        if (firstInvalid) {
+            setFieldError(el.countsError, null, `Nombre entier entre 0 et ${MAX_COUNT} attendu, ou case vide.`);
+            firstInvalid.focus();
+            return null;
+        }
+        return fields;
+    }
+
+    async function onCountsSubmit(event) {
+        event.preventDefault();
+        if (savingCounts || !selectedSchool) {
+            return;
+        }
+
+        const fields = readCounts();
+        if (!fields) {
+            return;
+        }
+
+        const school = selectedSchool;
+        savingCounts = true;
+        el.countsSave.disabled = true;
+
+        try {
+            await grist.docApi.applyUserActions([['UpdateRecord', TABLE_SCHOOLS, school.id, fields]]);
+            await loadSchools();
+            // Ramène l'école retenue sur sa ligne relue, avec les nouveaux effectifs.
+            refreshSchoolList();
+
+            el.countsDialog.close();
+            setStatus(`Effectifs enregistrés pour ${school.label || school.UAI} (${school.year || 'sans année'}).`, 'success');
+        } catch (error) {
+            console.error(error);
+            setFieldError(el.countsError, null,
+                'Enregistrement impossible : ' + ((error && error.message) ? error.message : error));
+            el.countsSave.disabled = false;
+        } finally {
+            savingCounts = false;
+        }
+    }
+
     function onReset() {
         clearSchool();
         el.titleInput.value = '';
@@ -707,7 +878,16 @@
             existingSubtitle: 'existing-subtitle',
             existingList: 'existing-list',
             bootError: 'boot-error',
-            bootErrorText: 'boot-error-text'
+            bootErrorText: 'boot-error-text',
+            countsBtn: 'counts-btn',
+            countsDialog: 'counts-dialog',
+            countsForm: 'counts-form',
+            countsSubtitle: 'counts-subtitle',
+            countsNote: 'counts-note',
+            countsGrid: 'counts-grid',
+            countsError: 'counts-error',
+            countsSave: 'counts-save',
+            countsCancel: 'counts-cancel'
         };
 
         for (const [key, id] of Object.entries(ids)) {
@@ -736,22 +916,18 @@
                 event.preventDefault();
                 if (el.schoolList.hidden) {
                     renderResults(el.schoolInput.value);
+                } else {
+                    highlightOption(activeOption + 1);
                 }
-                highlightOption(activeOption + 1);
             } else if (event.key === 'ArrowUp') {
                 event.preventDefault();
                 highlightOption(activeOption - 1);
             } else if (event.key === 'Enter') {
                 // Entrée ne doit jamais envoyer le formulaire depuis ce champ :
-                // elle retient l'école mise en avant, ou la seule proposition.
+                // elle retient l'école mise en avant.
                 event.preventDefault();
-                if (el.schoolList.hidden) {
-                    return;
-                }
-                if (activeOption >= 0 && results[activeOption]) {
+                if (!el.schoolList.hidden && results[activeOption]) {
                     selectSchool(results[activeOption]);
-                } else if (results.length === 1) {
-                    selectSchool(results[0]);
                 }
             } else if (event.key === 'Escape') {
                 closeList();
@@ -759,7 +935,16 @@
         });
 
         el.yearSelect.addEventListener('change', () => {
-            renderExisting();
+            const previous = selectedSchool;
+            if (!refreshSchoolList()) {
+                // Une école fermée ou pas encore ouverte ne peut pas recevoir de
+                // projet cette année-là.
+                clearSchool();
+                setStatus(`${previous.label || previous.UAI} n'existe pas dans la table des écoles en ${el.yearSelect.value}.`, 'warn');
+            } else {
+                updateLevelCounts();
+                renderExisting();
+            }
             resetDuplicateGuard();
         });
 
@@ -767,6 +952,21 @@
 
         el.form.addEventListener('submit', onSubmit);
         el.resetBtn.addEventListener('click', onReset);
+
+        el.countsBtn.addEventListener('click', openCountsDialog);
+        el.countsForm.addEventListener('submit', onCountsSubmit);
+        el.countsCancel.addEventListener('click', () => el.countsDialog.close());
+        // Clic sur le fond assombri : la cible est alors le <dialog> lui-même.
+        el.countsDialog.addEventListener('click', (event) => {
+            if (event.target === el.countsDialog) {
+                el.countsDialog.close();
+            }
+        });
+        el.countsDialog.addEventListener('close', () => {
+            if (!el.countsBtn.hidden) {
+                el.countsBtn.focus();
+            }
+        });
     }
 
     async function init() {
@@ -776,7 +976,7 @@
             bootError('Cette page doit être ouverte comme widget personnalisé dans Grist.');
             return;
         }
-        if (!window.GristColumns || !window.SearchText) {
+        if (!window.GristColumns || !window.SearchText || !window.SchoolYears) {
             bootError('Les modules partagés du dossier shared ne se sont pas chargés.');
             return;
         }
@@ -786,16 +986,29 @@
         try {
             const missing = await restrictToWritableColumns();
 
+            let created = null;
+            try {
+                created = await window.SchoolYears.ensureYear();
+            } catch (error) {
+                console.warn('Année scolaire en cours non créée dans la table des écoles.', error);
+            }
+
+            const schoolColumns = await window.GristColumns.fetchDataColumnIds(TABLE_SCHOOLS);
+            writableCountColumns = new Set(schoolColumns || []);
+
             await loadSchools();
             await loadProjects();
             await buildYearOptions();
+            refreshSchoolList();
 
             buildLevelChips();
             buildChips(el.domains, domains, (domain) => domain.col, (domain) => domain.label);
             bindEvents();
 
             if (schools.length === 0) {
-                setStatus(`Aucune école lisible dans la table ${TABLE_SCHOOLS}.`, 'error');
+                setStatus(`Aucune école lisible dans la table ${TABLE_SCHOOLS} pour ${el.yearSelect.value}.`, 'error');
+            } else if (created && created.created > 0) {
+                setStatus(`Année ${created.year} créée : ${created.created} écoles reprises de ${created.sourceYear}, effectifs à saisir.`, 'info');
             } else if (missing && missing.length > 0) {
                 setStatus(`Colonnes absentes ou calculées, ignorées : ${missing.join(', ')}.`, 'warn');
             }

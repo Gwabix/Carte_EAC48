@@ -4,10 +4,13 @@
     /* ---------------------------------------------------------------
      * Référentiel des écoles : table lue en dehors du mappage du widget,
      * afin d'afficher aussi les écoles qui n'ont aucune ligne de projet.
+     * Une ligne par école et par année scolaire (voir shared/school-years.js).
      * Adapter ces constantes si la table ou ses colonnes sont renommées.
      * ------------------------------------------------------------- */
     const SCHOOLS_TABLE_ID = "Ecoles";
     const SCHOOLS_FIELDS = {
+        uai: "UAI",
+        year: "Annee",
         name: "Nom",
         complement: "Complement",
         commune: "Commune",
@@ -22,6 +25,13 @@
     const NO_CONFIG_DELAY_MS = 500;
     const POPUP_MAX_WIDTH = 420;
     const COINCIDENT_OFFSET_DEG = 0.00025;
+    // Emprise approchée de Limites_Lozere.geojson : cadre la carte dès sa
+    // création, avant que le fichier ne soit chargé et donne l'emprise exacte.
+    const DEPARTMENT_FALLBACK_BOUNDS = [[44.11, 2.98], [44.98, 4.0]];
+    const DEPARTMENT_PADDING = [12, 12];
+    // Crans de zoom d'un quart de niveau (1 par défaut) : le cadrage initial
+    // colle au département au lieu de retomber sur le niveau entier inférieur.
+    const ZOOM_SNAP = 0.25;
     const DEFAULT_NO_CONFIG_MESSAGE =
         "Veuillez configurer les colonnes dans le panneau du widget Grist (Nom, Latitude, Longitude, Domaines, Niveaux). " +
         "Année scolaire et École sont facultatives mais recommandées.";
@@ -31,7 +41,7 @@
     let departmentLayer = null;
     let circoLayer = null;
     let overlaysLoaded = false;
-    let hasFittedBounds = false;
+    let userMovedMap = false;
     let noConfigTimer = null;
 
     let colName = null;
@@ -43,7 +53,7 @@
     let colsSecondary = [];
 
     let allRows = [];
-    let schoolsById = null;
+    let schoolIndex = null;
     let schoolsRequested = false;
     let schoolsRefreshQueued = false;
     let entries = [];
@@ -210,22 +220,45 @@
                 },
             }).addTo(map);
 
-            const overlayBounds = L.latLngBounds();
-
-            if (departmentLayer && departmentLayer.getBounds().isValid()) {
-                overlayBounds.extend(departmentLayer.getBounds());
-            }
-
-            if (circoLayer && circoLayer.getBounds().isValid()) {
-                overlayBounds.extend(circoLayer.getBounds());
-            }
-
-            if (overlayBounds.isValid() && !hasFittedBounds && entries.length === 0) {
-                map.fitBounds(overlayBounds, { padding: [24, 24], animate: false });
-            }
+            fitDepartment();
         } catch (error) {
             overlaysLoaded = false;
             console.error(error);
+        }
+    }
+
+    function fitDepartment() {
+        if (!map || userMovedMap) {
+            return;
+        }
+        const bounds = departmentLayer && departmentLayer.getBounds().isValid()
+            ? departmentLayer.getBounds()
+            : DEPARTMENT_FALLBACK_BOUNDS;
+        map.invalidateSize({ animate: false });
+        map.fitBounds(bounds, { padding: DEPARTMENT_PADDING, animate: false });
+    }
+
+    function refreshMapSize() {
+        if (!map) {
+            return;
+        }
+        // Tant que l'utilisateur n'a pas bougé la carte, un changement de taille
+        // du widget (fréquent pendant le chargement dans Grist) recadre sur le
+        // département au lieu de simplement conserver le centre.
+        if (userMovedMap) {
+            map.invalidateSize();
+        } else {
+            fitDepartment();
+        }
+    }
+
+    function watchUserMoves() {
+        const container = map.getContainer();
+        const markMoved = () => {
+            userMovedMap = true;
+        };
+        for (const type of ["pointerdown", "wheel", "keydown"]) {
+            container.addEventListener(type, markMoved, { passive: true });
         }
     }
 
@@ -239,14 +272,16 @@
             );
             return false;
         }
-        map = L.map("map").setView([46.8, 2.3], 6);
+        map = L.map("map", { zoomSnap: ZOOM_SNAP });
+        fitDepartment();
         L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
             maxZoom: 19,
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
         }).addTo(map);
         markersLayer = L.layerGroup().addTo(map);
+        watchUserMoves();
         void loadMapOverlays();
-        setTimeout(() => map.invalidateSize(), 0);
+        setTimeout(refreshMapSize, 0);
         return true;
     }
 
@@ -324,26 +359,35 @@
             const ids = data?.id;
             const lats = data?.[SCHOOLS_FIELDS.latitude];
             const lngs = data?.[SCHOOLS_FIELDS.longitude];
+            const uais = data?.[SCHOOLS_FIELDS.uai];
+            const schoolYears = data?.[SCHOOLS_FIELDS.year];
 
             if (!Array.isArray(ids) || !Array.isArray(lats) || !Array.isArray(lngs)) {
                 return;
             }
 
-            const next = new Map();
+            const records = [];
             for (let index = 0; index < ids.length; index += 1) {
                 const lat = parseFloat(lats[index]);
                 const lng = parseFloat(lngs[index]);
                 if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
                     continue;
                 }
-                next.set(ids[index], { name: buildSchoolName(data, index), lat, lng });
+                records.push({
+                    id: Number(ids[index]),
+                    uai: Array.isArray(uais) ? uais[index] : "",
+                    year: Array.isArray(schoolYears) ? schoolYears[index] : "",
+                    name: buildSchoolName(data, index),
+                    lat,
+                    lng,
+                });
             }
 
-            schoolsById = next.size > 0 ? next : null;
+            schoolIndex = records.length > 0 ? window.SchoolYears.buildIndex(records) : null;
         } catch (error) {
             // Table absente ou accès refusé : la carte se rabat sur les lignes de projets.
             console.warn("Référentiel des écoles indisponible.", error);
-            schoolsById = null;
+            schoolIndex = null;
         }
     }
 
@@ -352,6 +396,12 @@
             return;
         }
         schoolsRequested = true;
+        try {
+            // Crée les lignes de l'année en cours avant la première lecture.
+            await window.SchoolYears.ensureYear();
+        } catch (error) {
+            console.warn("Année scolaire en cours non créée dans la table des écoles.", error);
+        }
         await loadSchools();
         rebuild();
     }
@@ -396,9 +446,12 @@
             return entry;
         };
 
-        if (schoolsById) {
-            for (const [id, school] of schoolsById) {
-                const key = colSchool ? `school:${id}` : positionKey(school.lat, school.lng);
+        // Écoles existant l'année affichée, avec ou sans projet. Une école a une
+        // ligne par année : elle est regroupée par UAI, et sa position et son
+        // nom sont ceux de l'année affichée.
+        if (schoolIndex) {
+            for (const school of schoolIndex.schoolsFor(selectedYear)) {
+                const key = colSchool ? `school:${school.key}` : positionKey(school.lat, school.lng);
                 ensureEntry(key, school.name, school.lat, school.lng);
             }
         }
@@ -409,11 +462,12 @@
             const lat = parseFloat(row[colLat]);
             const lng = parseFloat(row[colLng]);
             const id = colSchool ? referenceId(row[colSchool]) : null;
+            const school = id !== null && schoolIndex ? schoolIndex.byId.get(id) : null;
 
             let key = null;
-            if (id !== null && schoolsById && schoolsById.has(id)) {
-                key = `school:${id}`;
-            } else if (id !== null && schoolsById) {
+            if (school) {
+                key = `school:${school.key}`;
+            } else if (id !== null && schoolIndex) {
                 sawUnknownReference = true;
             }
 
@@ -421,11 +475,16 @@
                 if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
                     continue;
                 }
-                key = id !== null && !schoolsById ? `school:${id}` : positionKey(lat, lng);
+                key = id !== null && !schoolIndex ? `school:${id}` : positionKey(lat, lng);
             }
 
             let entry = byKey.get(key);
-            if (!entry) {
+            if (!entry && school) {
+                // École absente de l'année affichée (fermée depuis, par exemple) :
+                // elle reste accessible par l'historique de ses projets.
+                const shown = schoolIndex.resolve(school.key, selectedYear) || school;
+                entry = ensureEntry(key, shown.name, shown.lat, shown.lng);
+            } else if (!entry) {
                 if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
                     continue;
                 }
@@ -494,7 +553,9 @@
             return;
         }
 
-        const found = new Set();
+        // Les années de la table des écoles comptent aussi : l'année en cours
+        // doit être proposée avant même qu'un projet y soit saisi.
+        const found = new Set(schoolIndex ? schoolIndex.years : []);
         for (const row of allRows) {
             const value = rowYear(row).trim();
             if (value.length > 0) {
@@ -607,7 +668,6 @@
         const counts = visible.map((entry) => entry.matchCount).filter((n) => n > 0);
         const minCount = counts.length > 0 ? Math.min(...counts) : 0;
         const maxCount = counts.length > 0 ? Math.max(...counts) : 0;
-        const bounds = L.latLngBounds();
 
         for (const entry of visible) {
             const marker = L.marker([entry.dLat, entry.dLng], {
@@ -639,19 +699,6 @@
                 element.setAttribute("role", "button");
                 element.setAttribute("aria-label", markerLabel(entry));
             }
-
-            bounds.extend([entry.dLat, entry.dLng]);
-        }
-
-        if (bounds.isValid() && !hasFittedBounds) {
-            hasFittedBounds = true;
-            map.stop();
-            map.flyToBounds(bounds, {
-                padding: [40, 40],
-                maxZoom: 13,
-                duration: 0.9,
-                easeLinearity: 0.2,
-            });
         }
 
         if (modalEntryKey) {
@@ -1234,6 +1281,8 @@
     function bindYearSelect() {
         document.getElementById("year-select").addEventListener("change", (event) => {
             selectedYear = event.target.value;
+            // Les écoles affichées dépendent de l'année : ouvertures et fermetures.
+            buildEntries();
             renderMap();
         });
     }
@@ -1242,6 +1291,10 @@
         if (typeof grist === "undefined") {
             document.getElementById("no-config").querySelector("span").textContent =
                 "Widget non chargé dans Grist.";
+            return;
+        }
+        if (!window.GristColumns || !window.SchoolYears) {
+            showNoConfigMessage("Les modules partagés du dossier shared ne se sont pas chargés.");
             return;
         }
 
@@ -1258,11 +1311,7 @@
         bindYearSelect();
         ensureMap();
 
-        window.addEventListener("resize", () => {
-            if (map) {
-                map.invalidateSize();
-            }
-        });
+        window.addEventListener("resize", refreshMapSize);
 
         grist.ready({
             requiredAccess: "full",
@@ -1285,8 +1334,8 @@
             schoolsRefreshQueued = false;
             void ensureSchools();
             applyMappings(mappings ?? null);
-            if (mapReady && map) {
-                setTimeout(() => map.invalidateSize(), 0);
+            if (mapReady) {
+                setTimeout(refreshMapSize, 0);
             }
         });
     }

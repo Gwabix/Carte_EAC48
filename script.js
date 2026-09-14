@@ -18,8 +18,24 @@
         longitude: "Longitude",
     };
 
+    /* ---------------------------------------------------------------
+     * Niveaux cochés : table source du widget, lue elle aussi hors mappage.
+     * Les colonnes mappées dans Niveaux (TPS, PS…) sont des formules qui
+     * reprennent l'effectif de l'école, vides tant qu'il n'est pas saisi. Le
+     * drapeau posé par la saisie (TPS2, PS2…) dit, lui, si le projet concerne
+     * le niveau. Grist ne transmet au widget que les colonnes mappées, d'où
+     * cette lecture. Adapter si la table ou ses colonnes sont renommées.
+     * ------------------------------------------------------------- */
+    const PROJECTS_TABLE_ID = "Projets_par_ecole";
+    const LEVEL_FLAGS = {
+        TPS: "TPS2", PS: "PS2", MS: "MS2", GS: "GS2", CP: "CP2",
+        CE1: "CE1_2", CE2: "CE2_2", CM1: "CM1_2", CM2: "CM2_2", ASH: "ASH",
+    };
+
     const ALL_YEARS = "__all__";
     const ALL_YEARS_LABEL = "Toutes les années";
+    const HIDDEN_ONLY_TITLE_ON = "Afficher seulement les écoles sans projet";
+    const HIDDEN_ONLY_TITLE_OFF = "Afficher les écoles avec projet";
     const HOVER_OPEN_DELAY_MS = 850;
     const HOVER_CLOSE_DELAY_MS = 300;
     const NO_CONFIG_DELAY_MS = 500;
@@ -56,6 +72,10 @@
     let schoolIndex = null;
     let schoolsRequested = false;
     let schoolsRefreshQueued = false;
+    // rowId → niveaux (colonnes de Niveaux) cochés ; null si illisible.
+    let levelFlags = null;
+    let levelFlagColumns = new Set();
+    let levelFlagsRequest = 0;
     let entries = [];
     let years = [];
     let selectedYear = null;
@@ -73,6 +93,7 @@
     let modalEntryKey = null;
     let modalApplyFilters = false;
     let lastFocusedBeforeModal = null;
+    let lastFocusedBeforeHelp = null;
 
     /* ---------------------------------------------------------------
      * Utilitaires
@@ -308,6 +329,17 @@
         return colsPrimary.some((col) => isNonEmpty(row[col]));
     }
 
+    // Le projet concerne-t-il ce niveau ? Case cochée si elle est connue,
+    // sinon effectif non nul (colonne sans drapeau, table illisible, ligne
+    // arrivée avant la relecture des drapeaux).
+    function rowHasLevel(row, col) {
+        const checked = levelFlags && levelFlagColumns.has(col) ? levelFlags.get(Number(row.id)) : null;
+        if (checked && checked.has(col)) {
+            return true;
+        }
+        return isNumericNonZero(row[col]);
+    }
+
     function rowMatchesFilters(row) {
         const primaryCols = [...activePrimary];
         const secondaryCols = [...activeSecondary];
@@ -317,7 +349,7 @@
         }
 
         const hasPrimary = primaryCols.some((col) => isNonEmpty(row[col]));
-        const hasSecondary = secondaryCols.some((col) => isNumericNonZero(row[col]));
+        const hasSecondary = secondaryCols.some((col) => rowHasLevel(row, col));
 
         return hasPrimary && hasSecondary;
     }
@@ -406,6 +438,45 @@
         rebuild();
     }
 
+    async function loadLevelFlags() {
+        const request = ++levelFlagsRequest;
+        if (typeof grist === "undefined" || !grist.docApi || typeof grist.docApi.fetchTable !== "function") {
+            return;
+        }
+
+        try {
+            const data = await grist.docApi.fetchTable(PROJECTS_TABLE_ID);
+            const ids = Array.isArray(data?.id) ? data.id : [];
+            const columns = new Set();
+            const flags = new Map(ids.map((id) => [Number(id), new Set()]));
+
+            for (const [level, flagCol] of Object.entries(LEVEL_FLAGS)) {
+                const values = data?.[flagCol];
+                if (!Array.isArray(values)) {
+                    continue;
+                }
+                columns.add(level);
+                values.forEach((value, index) => {
+                    if (isNumericNonZero(value) || value === true) {
+                        flags.get(Number(ids[index])).add(level);
+                    }
+                });
+            }
+
+            if (request === levelFlagsRequest) {
+                levelFlags = flags;
+                levelFlagColumns = columns;
+            }
+        } catch (error) {
+            // Table renommée ou accès refusé : les effectifs font foi.
+            console.warn("Niveaux cochés indisponibles.", error);
+            if (request === levelFlagsRequest) {
+                levelFlags = null;
+                levelFlagColumns = new Set();
+            }
+        }
+    }
+
     function queueSchoolsRefresh() {
         // Une seule tentative par lot d'enregistrements, sinon une référence
         // orpheline relancerait indéfiniment la lecture du référentiel.
@@ -424,9 +495,17 @@
         return `pos:${lat.toFixed(6)},${lng.toFixed(6)}`;
     }
 
+    // Identifiant de ligne d'une Référence, sous ses différentes formes :
+    //  - ["R", "Ecoles", 12] : forme encodée, celle que grist.onRecords
+    //    transmet avec expandRefs: false (valeur non décodée) ;
+    //  - { tableId, rowId } : forme décodée (keepEncoded: false) ;
+    //  - { id } ou 12 : lignes lues autrement.
     function referenceId(value) {
-        if (value && typeof value === "object" && "id" in value) {
-            return Number(value.id);
+        if (Array.isArray(value)) {
+            return value[0] === "R" && value.length >= 3 ? referenceId(value[2]) : null;
+        }
+        if (value && typeof value === "object") {
+            return referenceId("rowId" in value ? value.rowId : value.id);
         }
         const id = Number(value);
         return Number.isFinite(id) && id > 0 ? id : null;
@@ -565,13 +644,31 @@
         years = [...found].sort();
     }
 
+    // Dernière année ayant au moins un projet : en début d'année scolaire,
+    // l'année en cours est encore vide. À défaut, l'année en cours, puis la
+    // plus récente.
+    function defaultYear() {
+        const withProjects = allRows
+            .filter(rowHasAnyProject)
+            .map((row) => rowYear(row).trim())
+            .filter((value) => years.includes(value))
+            .sort();
+        if (withProjects.length > 0) {
+            return withProjects[withProjects.length - 1];
+        }
+        const current = currentSchoolYear();
+        return years.includes(current) ? current : years[years.length - 1];
+    }
+
     function buildYearSelect() {
         const section = document.getElementById("year-section");
         const select = document.getElementById("year-select");
 
         if (!colYear || years.length === 0) {
             section.hidden = true;
-            selectedYear = ALL_YEARS;
+            // Sans année connue (référentiel pas encore lu), aucun choix
+            // n'est retenu : l'année par défaut sera calculée ensuite.
+            selectedYear = colYear ? null : ALL_YEARS;
             return;
         }
 
@@ -595,8 +692,7 @@
         if (previous === ALL_YEARS || (previous && years.includes(previous))) {
             selectedYear = previous;
         } else {
-            const current = currentSchoolYear();
-            selectedYear = years.includes(current) ? current : years[years.length - 1];
+            selectedYear = defaultYear();
         }
 
         select.value = selectedYear;
@@ -716,7 +812,12 @@
      * ------------------------------------------------------------- */
 
     function levelsForRow(row, cols) {
-        return cols.filter((col) => isNumericNonZero(row[col]));
+        return cols.filter((col) => rowHasLevel(row, col));
+    }
+
+    // « 12 CP » si l'effectif est connu, « CP » sinon.
+    function levelText(row, col) {
+        return isNumericNonZero(row[col]) ? `${row[col]} ${col}` : col;
     }
 
     function buildHoverContent(entry) {
@@ -767,7 +868,7 @@
                     if (levels.length > 0) {
                         const detail = document.createElement("span");
                         detail.className = "project-levels";
-                        detail.textContent = `(${levels.map((col) => `${project[col]} ${col}`).join(", ")})`;
+                        detail.textContent = `(${levels.map((col) => levelText(project, col)).join(", ")})`;
                         content.appendChild(detail);
                     }
 
@@ -838,7 +939,7 @@
     }
 
     function openHoverPopup(entry) {
-        if (!map || modalEntryKey) {
+        if (!map || modalEntryKey || isHelpOpen()) {
             return;
         }
 
@@ -916,7 +1017,7 @@
             if (levels.length > 0) {
                 const detail = document.createElement("span");
                 detail.className = "history-project-levels";
-                detail.textContent = levels.map((col) => `${project[col]} ${col}`).join(", ");
+                detail.textContent = levels.map((col) => levelText(project, col)).join(", ");
                 block.appendChild(detail);
             }
 
@@ -1057,12 +1158,15 @@
             closeSchoolModal();
             return;
         }
+        trapFocus(event, document.querySelector("#school-modal .modal"));
+    }
 
-        if (event.key !== "Tab") {
+    // Garde Tab et Maj+Tab à l'intérieur d'une fenêtre modale.
+    function trapFocus(event, modal) {
+        if (event.key !== "Tab" || !modal) {
             return;
         }
 
-        const modal = document.querySelector("#school-modal .modal");
         const focusable = [...modal.querySelectorAll("button, input, select, [href], [tabindex]:not([tabindex='-1'])")]
             .filter((el) => !el.disabled && el.offsetParent !== null);
 
@@ -1080,6 +1184,60 @@
             event.preventDefault();
             first.focus();
         }
+    }
+
+    /* ---------------------------------------------------------------
+     * Modale d'aide
+     * ------------------------------------------------------------- */
+
+    function isHelpOpen() {
+        return !document.getElementById("help-modal").classList.contains("hidden");
+    }
+
+    function openHelp() {
+        if (isHelpOpen()) {
+            return;
+        }
+        cancelHoverOpen();
+        closeHoverPopup();
+        lastFocusedBeforeHelp = document.activeElement;
+        document.getElementById("help-modal").classList.remove("hidden");
+        document.getElementById("help-btn").setAttribute("aria-expanded", "true");
+        document.getElementById("help-close").focus();
+        document.addEventListener("keydown", onHelpKeydown, true);
+    }
+
+    function closeHelp() {
+        if (!isHelpOpen()) {
+            return;
+        }
+        document.getElementById("help-modal").classList.add("hidden");
+        document.getElementById("help-btn").setAttribute("aria-expanded", "false");
+        document.removeEventListener("keydown", onHelpKeydown, true);
+        if (lastFocusedBeforeHelp && typeof lastFocusedBeforeHelp.focus === "function") {
+            lastFocusedBeforeHelp.focus();
+        }
+        lastFocusedBeforeHelp = null;
+    }
+
+    function onHelpKeydown(event) {
+        if (event.key === "Escape") {
+            event.preventDefault();
+            closeHelp();
+            return;
+        }
+        trapFocus(event, document.querySelector("#help-modal .modal"));
+    }
+
+    function bindHelp() {
+        const overlay = document.getElementById("help-modal");
+        document.getElementById("help-btn").addEventListener("click", openHelp);
+        document.getElementById("help-close").addEventListener("click", closeHelp);
+        overlay.addEventListener("click", (event) => {
+            if (event.target === overlay) {
+                closeHelp();
+            }
+        });
     }
 
     /* ---------------------------------------------------------------
@@ -1231,6 +1389,8 @@
             if (hiddenOnlyBtn) {
                 hiddenOnlyBtn.classList.toggle("hidden", !showHidden);
                 hiddenOnlyBtn.setAttribute("aria-pressed", String(showHiddenOnly));
+                // L'infobulle annonce l'effet du prochain clic.
+                hiddenOnlyBtn.title = showHiddenOnly ? HIDDEN_ONLY_TITLE_OFF : HIDDEN_ONLY_TITLE_ON;
             }
         };
 
@@ -1308,6 +1468,7 @@
 
         bindHiddenToggles();
         bindModal();
+        bindHelp();
         bindYearSelect();
         ensureMap();
 
@@ -1328,16 +1489,22 @@
             ],
         });
 
+        // expandRefs: false : par défaut, Grist transmet la valeur affichée
+        // d'une colonne Référence (code UAI, nom…) au lieu de l'identifiant de
+        // ligne. Les projets ne seraient alors pas rattachés à leur école du
+        // référentiel, qui apparaîtrait en double, sans projet.
         grist.onRecords((records, mappings) => {
             const mapReady = ensureMap();
             allRows = Array.isArray(records) ? records : [];
             schoolsRefreshQueued = false;
             void ensureSchools();
             applyMappings(mappings ?? null);
+            // Les drapeaux changent avec les lignes : relus à chaque envoi.
+            loadLevelFlags().then(rebuild);
             if (mapReady) {
                 setTimeout(refreshMapSize, 0);
             }
-        });
+        }, { expandRefs: false });
     }
 
     document.addEventListener("DOMContentLoaded", init);

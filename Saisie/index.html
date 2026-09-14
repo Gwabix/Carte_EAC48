@@ -19,6 +19,11 @@
                     même année.</p>
             </div>
 
+            <div id="duplicates-banner" class="banner" hidden>
+                <span id="duplicates-text"></span>
+                <button type="button" id="duplicates-btn" class="link-btn">Choisir les effectifs</button>
+            </div>
+
             <div class="field">
                 <label for="school-input">École <span class="required" aria-hidden="true">*</span></label>
                 <div class="combo">
@@ -92,6 +97,24 @@
             <div class="actions">
                 <button type="submit" id="counts-save" class="btn btn-primary">Enregistrer les effectifs</button>
                 <button type="button" id="counts-cancel" class="btn btn-ghost">Annuler</button>
+            </div>
+        </form>
+    </dialog>
+
+    <dialog id="duplicates-dialog" class="dialog dialog-wide" aria-labelledby="duplicates-title"
+        aria-describedby="duplicates-intro">
+        <form id="duplicates-form" class="dialog-form" novalidate>
+            <div class="card-header">
+                <h2 id="duplicates-title">Écoles en double</h2>
+                <p id="duplicates-intro">Ces écoles ont plusieurs lignes pour la même année, avec des effectifs
+                    différents. Choisissez ceux à conserver : les lignes seront fusionnées et leurs projets rattachés
+                    à la ligne conservée.</p>
+            </div>
+            <div id="duplicates-list" class="duplicates-list"></div>
+            <p class="error" id="duplicates-error" role="alert" hidden></p>
+            <div class="actions">
+                <button type="submit" id="duplicates-save" class="btn btn-primary">Fusionner</button>
+                <button type="button" id="duplicates-cancel" class="btn btn-ghost">Plus tard</button>
             </div>
         </form>
     </dialog>

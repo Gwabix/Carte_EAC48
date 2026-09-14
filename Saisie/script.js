@@ -11,7 +11,8 @@
  * Les niveaux ne s'écrivent PAS dans Niveau_x_, qui est une colonne formule.
  * On écrit 1 dans les drapeaux TPS2, PS2, MS2… et dans ASH ; la formule en
  * déduit la liste de choix, et les colonnes TPS, PS, MS… y puisent l'effectif
- * de l'école. C'est cet effectif que la carte lit pour filtrer les niveaux.
+ * de l'école. La carte filtre les niveaux sur ces drapeaux et affiche
+ * l'effectif quand il est connu.
  *
  * La table Ecoles a une ligne par école et par année scolaire : le projet
  * référence la ligne de SON année, pour que ses effectifs restent ceux de
@@ -73,6 +74,8 @@
     let results = [];
     let pendingDuplicate = false;
     let submitting = false;
+    let pendingDuplicates = [];
+    let mergingDuplicates = false;
 
     const el = {};
 
@@ -348,8 +351,8 @@
     }
 
     // Effectifs de l'école retenue, affichés à côté de chaque niveau. Un
-    // niveau sans élève ne produirait rien dans Niveau_x_ : la formule lit
-    // l'effectif, qui reste vide quand il vaut zéro.
+    // effectif absent est signalé : la carte affiche quand même le projet,
+    // mais la formule Niveau_x_, qui lit l'effectif, n'aura pas ce niveau.
     function updateLevelCounts() {
         const chips = [...el.levels.querySelectorAll('.chip')];
 
@@ -841,6 +844,180 @@
         }
     }
 
+    /* ------------------------------------------------------------------
+     * Écoles en double (même UAI, même année)
+     *
+     * Fusionnées à l'ouverture quand les effectifs concordent (une valeur
+     * renseignée l'emporte sur une case vide). En cas de valeurs différentes,
+     * l'utilisateur choisit dans une fenêtre ; sinon, rien n'est supprimé.
+     * ---------------------------------------------------------------- */
+
+    function plural(count, singular, pluralForm) {
+        return count > 1 ? pluralForm : singular;
+    }
+
+    async function mergeDuplicatesOnLoad() {
+        try {
+            const result = await window.SchoolYears.mergeDuplicates();
+            pendingDuplicates = result.skipped;
+            return result;
+        } catch (error) {
+            console.warn('Doublons d\'écoles non fusionnés.', error);
+            pendingDuplicates = [];
+            return { merged: 0, removed: 0, skipped: [], error };
+        }
+    }
+
+    function updateDuplicatesBanner() {
+        const count = pendingDuplicates.length;
+        el.duplicatesBanner.hidden = count === 0;
+        el.duplicatesText.textContent = count === 0 ? ''
+            : `${count} ${plural(count, 'école a', 'écoles ont')} plusieurs lignes la même année, avec des effectifs différents.`;
+    }
+
+    function duplicateLabel(group) {
+        const school = schoolIndex ? schoolIndex.byId.get(group.keepId) : null;
+        return [school && school.label, group.uai, group.year].filter(Boolean).join(' · ');
+    }
+
+    function renderDuplicates() {
+        el.duplicatesList.textContent = '';
+
+        pendingDuplicates.forEach((group, groupIndex) => {
+            const fieldset = document.createElement('fieldset');
+            fieldset.className = 'duplicate-group';
+
+            const legend = document.createElement('legend');
+            legend.textContent = duplicateLabel(group);
+            fieldset.appendChild(legend);
+
+            group.conflicts.forEach((conflict, conflictIndex) => {
+                const row = document.createElement('div');
+                row.className = 'duplicate-choice';
+                row.setAttribute('role', 'radiogroup');
+
+                const level = document.createElement('span');
+                level.className = 'duplicate-level';
+                level.id = `dup-${groupIndex}-${conflictIndex}`;
+                level.textContent = conflict.colId;
+                row.setAttribute('aria-labelledby', level.id);
+                row.appendChild(level);
+
+                conflict.options.forEach((option, optionIndex) => {
+                    const chip = document.createElement('label');
+                    chip.className = 'chip';
+
+                    const input = document.createElement('input');
+                    input.type = 'radio';
+                    input.name = level.id;
+                    input.value = String(optionIndex);
+                    input.addEventListener('change', () => {
+                        row.classList.remove('is-invalid');
+                        setFieldError(el.duplicatesError, null, '');
+                    });
+
+                    const caption = document.createElement('span');
+                    caption.textContent = String(option.value);
+
+                    chip.append(input, caption);
+                    row.appendChild(chip);
+                });
+
+                fieldset.appendChild(row);
+            });
+
+            el.duplicatesList.appendChild(fieldset);
+        });
+    }
+
+    function openDuplicatesDialog() {
+        if (pendingDuplicates.length === 0) {
+            return;
+        }
+        renderDuplicates();
+        setFieldError(el.duplicatesError, null, '');
+        el.duplicatesSave.disabled = false;
+        el.duplicatesDialog.showModal();
+        const first = el.duplicatesList.querySelector('input');
+        if (first) {
+            first.focus();
+        }
+    }
+
+    function readDuplicateChoices() {
+        const choices = {};
+        let firstInvalid = null;
+
+        pendingDuplicates.forEach((group, groupIndex) => {
+            choices[group.key] = {};
+            group.conflicts.forEach((conflict, conflictIndex) => {
+                const name = `dup-${groupIndex}-${conflictIndex}`;
+                const checked = el.duplicatesList.querySelector(`input[name="${name}"]:checked`);
+                if (!checked) {
+                    const row = el.duplicatesList.querySelector(`[aria-labelledby="${name}"]`);
+                    row.classList.add('is-invalid');
+                    firstInvalid = firstInvalid || row.querySelector('input');
+                    return;
+                }
+                choices[group.key][conflict.colId] = conflict.options[Number(checked.value)].value;
+            });
+        });
+
+        if (firstInvalid) {
+            setFieldError(el.duplicatesError, null, 'Choisissez une valeur pour chaque effectif.');
+            firstInvalid.focus();
+            return null;
+        }
+        return choices;
+    }
+
+    async function onDuplicatesSubmit(event) {
+        event.preventDefault();
+        if (mergingDuplicates) {
+            return;
+        }
+        const choices = readDuplicateChoices();
+        if (!choices) {
+            return;
+        }
+
+        mergingDuplicates = true;
+        el.duplicatesSave.disabled = true;
+
+        try {
+            const result = await window.SchoolYears.mergeDuplicates({ choices });
+            pendingDuplicates = result.skipped;
+            await loadSchools();
+            await loadProjects();
+            if (refreshSchoolList()) {
+                updateLevelCounts();
+                renderExisting();
+            } else {
+                clearSchool();
+            }
+            updateDuplicatesBanner();
+
+            if (pendingDuplicates.length > 0) {
+                // La table a changé entre l'ouverture et l'envoi.
+                renderDuplicates();
+                setFieldError(el.duplicatesError, null, 'Les lignes ont été modifiées entre-temps : vérifiez les choix.');
+                el.duplicatesSave.disabled = false;
+            } else {
+                el.duplicatesDialog.close();
+            }
+            if (result.merged > 0) {
+                setStatus(`${result.merged} ${plural(result.merged, 'école fusionnée', 'écoles fusionnées')}.`, 'success');
+            }
+        } catch (error) {
+            console.error(error);
+            setFieldError(el.duplicatesError, null,
+                'Fusion impossible : ' + ((error && error.message) ? error.message : error));
+            el.duplicatesSave.disabled = false;
+        } finally {
+            mergingDuplicates = false;
+        }
+    }
+
     function onReset() {
         clearSchool();
         el.titleInput.value = '';
@@ -887,7 +1064,16 @@
             countsGrid: 'counts-grid',
             countsError: 'counts-error',
             countsSave: 'counts-save',
-            countsCancel: 'counts-cancel'
+            countsCancel: 'counts-cancel',
+            duplicatesBanner: 'duplicates-banner',
+            duplicatesText: 'duplicates-text',
+            duplicatesBtn: 'duplicates-btn',
+            duplicatesDialog: 'duplicates-dialog',
+            duplicatesForm: 'duplicates-form',
+            duplicatesList: 'duplicates-list',
+            duplicatesError: 'duplicates-error',
+            duplicatesSave: 'duplicates-save',
+            duplicatesCancel: 'duplicates-cancel'
         };
 
         for (const [key, id] of Object.entries(ids)) {
@@ -967,6 +1153,15 @@
                 el.countsBtn.focus();
             }
         });
+
+        el.duplicatesBtn.addEventListener('click', openDuplicatesDialog);
+        el.duplicatesForm.addEventListener('submit', onDuplicatesSubmit);
+        el.duplicatesCancel.addEventListener('click', () => el.duplicatesDialog.close());
+        el.duplicatesDialog.addEventListener('click', (event) => {
+            if (event.target === el.duplicatesDialog) {
+                el.duplicatesDialog.close();
+            }
+        });
     }
 
     async function init() {
@@ -993,6 +1188,8 @@
                 console.warn('Année scolaire en cours non créée dans la table des écoles.', error);
             }
 
+            const merge = await mergeDuplicatesOnLoad();
+
             const schoolColumns = await window.GristColumns.fetchDataColumnIds(TABLE_SCHOOLS);
             writableCountColumns = new Set(schoolColumns || []);
 
@@ -1004,14 +1201,32 @@
             buildLevelChips();
             buildChips(el.domains, domains, (domain) => domain.col, (domain) => domain.label);
             bindEvents();
+            updateDuplicatesBanner();
+
+            const messages = [];
+            let kind = 'info';
+            if (created && created.created > 0) {
+                messages.push(`Année ${created.year} créée : ${created.created} écoles reprises de ${created.sourceYear}, effectifs à saisir.`);
+            }
+            if (merge.merged > 0) {
+                messages.push(`${merge.merged} ${plural(merge.merged, 'école en double fusionnée', 'écoles en double fusionnées')}.`);
+            }
+            if (merge.error) {
+                messages.push('Écoles en double non fusionnées : ' + ((merge.error && merge.error.message) ? merge.error.message : merge.error));
+                kind = 'warn';
+            }
+            if (missing && missing.length > 0) {
+                messages.push(`Colonnes absentes ou calculées, ignorées : ${missing.join(', ')}.`);
+                kind = 'warn';
+            }
 
             if (schools.length === 0) {
                 setStatus(`Aucune école lisible dans la table ${TABLE_SCHOOLS} pour ${el.yearSelect.value}.`, 'error');
-            } else if (created && created.created > 0) {
-                setStatus(`Année ${created.year} créée : ${created.created} écoles reprises de ${created.sourceYear}, effectifs à saisir.`, 'info');
-            } else if (missing && missing.length > 0) {
-                setStatus(`Colonnes absentes ou calculées, ignorées : ${missing.join(', ')}.`, 'warn');
+            } else if (messages.length > 0) {
+                setStatus(messages.join(' '), kind);
             }
+
+            openDuplicatesDialog();
         } catch (error) {
             console.error(error);
             bootError((error && error.message) ? error.message : String(error));

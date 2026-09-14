@@ -52,7 +52,18 @@
         </div>
     </div>
 
-    <div id="map"></div>
+    <div id="map-area">
+        <div id="map"></div>
+        <button type="button" id="help-btn" class="map-help-btn" title="Aide : lire la carte"
+            aria-label="Aide : lire la carte" aria-haspopup="dialog" aria-controls="help-modal" aria-expanded="false">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="16" x2="12" y2="11" />
+                <line x1="12" y1="8" x2="12.01" y2="8" />
+            </svg>
+        </button>
+    </div>
     <div id="no-config" class="hidden">
         <strong>Configuration requise</strong>
         <span>Veuillez configurer les colonnes dans le panneau du widget Grist (Nom, Latitude, Longitude, Domaines,
@@ -82,6 +93,129 @@
                 </div>
             </div>
             <div class="modal-body" id="modal-body"></div>
+        </div>
+    </div>
+
+    <div id="help-modal" class="modal-overlay hidden">
+        <div class="modal modal-help" role="dialog" aria-modal="true" aria-labelledby="help-title">
+            <div class="modal-header">
+                <div class="modal-titles">
+                    <h2 id="help-title">Lire la carte</h2>
+                    <p>Pastilles, filtres et informations disponibles sur chaque école</p>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" id="help-close" class="modal-close" title="Fermer" aria-label="Fermer">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                            aria-hidden="true">
+                            <line x1="18" y1="6" x2="6" y2="18" />
+                            <line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <div class="modal-body help-body">
+                <section class="help-section" aria-labelledby="help-markers">
+                    <h3 id="help-markers">Couleur des pastilles</h3>
+                    <ul class="help-legend">
+                        <li>
+                            <span class="help-swatches" aria-hidden="true">
+                                <span class="school-marker" style="background:rgb(255,200,0)"><span class="school-marker-badge">1</span></span>
+                                <span class="school-marker" style="background:rgb(0,180,0)"><span class="school-marker-badge">4</span></span>
+                                <span class="school-marker" style="background:rgb(26,115,232)"><span class="school-marker-badge">8</span></span>
+                            </span>
+                            <span>
+                                <strong>Écoles avec projets.</strong> Le chiffre est le nombre de projets qui
+                                correspondent à l'année et aux filtres choisis. La couleur situe ce nombre parmi les
+                                écoles affichées : jaune pour le plus petit, vert au milieu, bleu pour le plus grand.
+                                Si toutes les écoles ont le même nombre, elles sont bleues.
+                            </span>
+                        </li>
+                        <li>
+                            <span class="help-swatches" aria-hidden="true">
+                                <span class="school-marker" style="background:#9ca3af"></span>
+                            </span>
+                            <span>
+                                <strong>Gris plein : aucun projet pour cette sélection.</strong> L'école a des
+                                projets, mais une autre année ou dans des domaines ou niveaux non cochés.
+                            </span>
+                        </li>
+                        <li>
+                            <span class="help-swatches" aria-hidden="true">
+                                <span class="school-marker school-marker-never" style="background:#e5e7eb"></span>
+                            </span>
+                            <span>
+                                <strong>Gris clair en pointillés : aucun projet</strong>, toutes années confondues.
+                            </span>
+                        </li>
+                    </ul>
+                    <p class="help-note">Les pastilles grises n'apparaissent que si les écoles sans projet sont
+                        affichées (voir ci-dessous). Des écoles aux mêmes coordonnées sont légèrement écartées pour
+                        rester visibles.</p>
+                </section>
+
+                <section class="help-section" aria-labelledby="help-filters">
+                    <h3 id="help-filters">Filtres</h3>
+                    <dl class="help-list">
+                        <dt>Année scolaire</dt>
+                        <dd>La carte s'ouvre sur la dernière année qui a des projets. Seules les écoles existant cette
+                            année-là sont affichées ; une école fermée depuis reste visible si elle a des projets.
+                            « Toutes les années » cumule les projets de toutes les années.</dd>
+
+                        <dt>Domaines</dt>
+                        <dd>Un projet compte s'il porte sur au moins un domaine coché.</dd>
+
+                        <dt>Niveaux</dt>
+                        <dd>Un projet compte s'il concerne au moins un niveau coché, même si l'effectif de l'école
+                            n'est pas encore renseigné.</dd>
+
+                        <dt>Les deux ensemble</dt>
+                        <dd>Un projet doit correspondre à la fois aux domaines et aux niveaux. Tout décocher dans une
+                            liste masque donc tous les projets. « Tout sélectionner » coche ou décoche toute la liste.
+                        </dd>
+
+                        <dt>
+                            <span class="help-inline-icon" aria-hidden="true">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+                                    fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                    stroke-linejoin="round">
+                                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                                    <circle cx="12" cy="12" r="3" />
+                                </svg>
+                            </span>
+                            Œil, en haut du panneau
+                        </dt>
+                        <dd>Affiche ou masque les écoles sans projet pour la sélection.</dd>
+
+                        <dt>
+                            <span class="help-inline-icon" aria-hidden="true"><span class="help-gradient-dot"></span></span>
+                            Pastille dégradée, à côté de l'œil
+                        </dt>
+                        <dd>Visible quand les écoles sans projet sont affichées. Permet d'afficher/masquer les écoles avec projets.</dd>
+                    </dl>
+                </section>
+
+                <section class="help-section" aria-labelledby="help-details">
+                    <h3 id="help-details">Informations sur une école</h3>
+                    <dl class="help-list">
+                        <dt>Survol</dt>
+                        <dd>Laisser la souris un instant sur une pastille ouvre une bulle : nom de l'école, année, et
+                            projets de la sélection classés par domaine, avec leurs niveaux. Quand un seul domaine est
+                            coché, l'effectif de chaque niveau est indiqué quand il est connu.</dd>
+
+                        <dt>Clic ou « Voir plus »</dt>
+                        <dd>Ouvre l'historique de l'école : les années en colonnes, les domaines en lignes, chaque
+                            projet avec ses niveaux et effectifs, et le total par année. L'année choisie est
+                            surlignée ; les domaines jamais abordés sont grisés. « Limiter aux filtres actifs »
+                            n'affiche que les projets correspondant aux filtres.</dd>
+
+                        <dt>Écran tactile ou clavier</dt>
+                        <dd>Sans survol possible, toucher une pastille ouvre directement l'historique. Au clavier,
+                            Tab passe d'une pastille à l'autre et Entrée l'ouvre.</dd>
+                    </dl>
+                </section>
+            </div>
         </div>
     </div>
 

@@ -10,11 +10,14 @@
  *
  * Une école est identifiée d'une année à l'autre par son code UAI.
  *
- * Deux services :
+ * Services :
  *
  *  - ensureYear() : si l'année scolaire en cours n'a encore aucune ligne, duplique
  *    celles de l'année précédente, effectifs vidés. Les ouvertures et fermetures
  *    d'écoles se corrigent ensuite à la main dans Grist.
+ *
+ *  - findDuplicates() / mergeDuplicates() : repère et fusionne les lignes d'une
+ *    même école (même UAI) pour une même année.
  *
  *  - buildIndex() : regroupe les lignes par école et retrouve la ligne à utiliser
  *    pour une année donnée.
@@ -76,37 +79,193 @@
         }
     }
 
-    // Deux widgets ouverts en même temps peuvent dupliquer chacun l'année.
-    // Chacun relit la table après son ajout et ne garde, par école, que la
-    // ligne de plus petit identifiant : la règle étant la même pour tous, les
-    // widgets suppriment les mêmes lignes et le résultat converge.
-    async function removeDuplicates(year) {
-        const data = await grist.docApi.fetchTable(TABLE_SCHOOLS);
+    /* ------------------------------------------------------------------
+     * Doublons : même UAI, même année
+     * ---------------------------------------------------------------- */
+
+    function isFilled(value) {
+        return value !== null && value !== undefined && value !== '';
+    }
+
+    // Groupes de lignes en double, relus dans la table. La ligne conservée est
+    // celle de plus petit identifiant : deux widgets qui fusionnent en même
+    // temps retiennent la même et convergent.
+    //
+    // Pour chaque effectif : une seule valeur renseignée (ou plusieurs
+    // identiques) est retenue d'office ; des valeurs différentes forment un
+    // conflit, à trancher par l'utilisateur. Les autres colonnes gardent la
+    // valeur de la ligne conservée, complétée si elle est vide.
+    function duplicateGroups(data, writable, onlyYear) {
         const ids = column(data, 'id');
         const uais = column(data, COL_UAI);
         const years = column(data, COL_YEAR);
-        const keep = new Map();
-        const extras = [];
+        const byKey = new Map();
 
         ids.map((id, i) => ({ id: Number(id), i }))
             .sort((a, b) => a.id - b.id)
             .forEach(({ id, i }) => {
-                if (text(years[i]) !== year || !text(uais[i])) {
+                const year = text(years[i]);
+                if (!text(uais[i]) || (onlyYear && year !== onlyYear)) {
                     return;
                 }
-                const key = schoolKey(uais[i], id);
-                if (keep.has(key)) {
-                    extras.push(id);
-                } else {
-                    keep.set(key, id);
+                const key = `${year}|${schoolKey(uais[i], id)}`;
+                if (!byKey.has(key)) {
+                    byKey.set(key, []);
                 }
+                byKey.get(key).push({ id, i });
             });
 
-        if (extras.length === 0) {
-            return;
+        const counts = new Set(COUNT_COLUMNS);
+        const others = writable.filter((colId) => !counts.has(colId) && colId !== COL_UAI && colId !== COL_YEAR && colId in data);
+        const groups = [];
+
+        for (const [key, rows] of byKey) {
+            if (rows.length < 2) {
+                continue;
+            }
+            const [kept, ...removed] = rows;
+            const resolved = {};
+            const conflicts = [];
+
+            for (const colId of COUNT_COLUMNS.filter((c) => c in data)) {
+                const options = [];
+                for (const { id, i } of rows) {
+                    const value = data[colId][i];
+                    if (isFilled(value) && !options.some((o) => o.value === value)) {
+                        options.push({ rowId: id, value });
+                    }
+                }
+                if (options.length === 1) {
+                    resolved[colId] = options[0].value;
+                } else if (options.length > 1) {
+                    conflicts.push({ colId, options });
+                }
+            }
+
+            for (const colId of others) {
+                if (isFilled(data[colId][kept.i])) {
+                    continue;
+                }
+                const donor = removed.find(({ i }) => isFilled(data[colId][i]));
+                if (donor) {
+                    resolved[colId] = data[colId][donor.i];
+                }
+            }
+
+            groups.push({
+                key,
+                year: text(years[kept.i]),
+                uai: text(uais[kept.i]),
+                keepId: kept.id,
+                removeIds: removed.map((r) => r.id),
+                current: Object.fromEntries(Object.keys(resolved).concat(conflicts.map((c) => c.colId))
+                    .map((colId) => [colId, data[colId][kept.i]])),
+                resolved,
+                conflicts
+            });
         }
+        return groups;
+    }
+
+    async function readDuplicates(onlyYear) {
+        const data = await grist.docApi.fetchTable(TABLE_SCHOOLS);
+        const writable = await global.GristColumns.fetchDataColumnIds(TABLE_SCHOOLS);
+        return duplicateGroups(data, writable || [], onlyYear);
+    }
+
+    /**
+     * Doublons de la table Ecoles (même UAI, même année), sans rien modifier.
+     * @param {Object} [options]
+     * @param {string} [options.year] limiter à une année
+     * @returns {Promise<Array<{key: string, year: string, uai: string, keepId: number,
+     *   removeIds: number[], conflicts: Array<{colId: string, options: Array<{rowId: number, value: *}>}>}>>}
+     */
+    async function findDuplicates(options) {
+        return readDuplicates(options && options.year);
+    }
+
+    /**
+     * Fusionne les doublons : effectifs retenus écrits sur la ligne conservée,
+     * projets des lignes retirées rattachés à elle, lignes retirées supprimées.
+     * Le tout en une seule action Grist.
+     *
+     * La table est relue au moment de fusionner : un groupe dont un conflit
+     * n'a pas de choix valide (nouveau conflit, valeur modifiée entre-temps)
+     * est laissé de côté et renvoyé dans `skipped`.
+     *
+     * @param {Object} [options]
+     * @param {string} [options.year] limiter à une année
+     * @param {Object<string, Object<string, *>>} [options.choices] par clé de
+     *        groupe, la valeur retenue pour chaque effectif en conflit
+     * @returns {Promise<{merged: number, removed: number, skipped: Array}>}
+     */
+    async function mergeDuplicates(options) {
+        const choices = (options && options.choices) || {};
+        const groups = await readDuplicates(options && options.year);
+        const ready = [];
+        const skipped = [];
+
+        for (const group of groups) {
+            const chosen = choices[group.key] || {};
+            const unresolved = group.conflicts.filter((conflict) =>
+                !Object.prototype.hasOwnProperty.call(chosen, conflict.colId)
+                || !conflict.options.some((o) => o.value === chosen[conflict.colId]));
+            if (unresolved.length > 0) {
+                skipped.push(group);
+                continue;
+            }
+            const fields = Object.assign({}, group.resolved);
+            for (const conflict of group.conflicts) {
+                fields[conflict.colId] = chosen[conflict.colId];
+            }
+            for (const colId of Object.keys(fields)) {
+                if (fields[colId] === group.current[colId]) {
+                    delete fields[colId];
+                }
+            }
+            ready.push({ group, fields });
+        }
+
+        if (ready.length === 0) {
+            return { merged: 0, removed: 0, skipped };
+        }
+
+        const target = new Map();
+        for (const { group } of ready) {
+            for (const id of group.removeIds) {
+                target.set(id, group.keepId);
+            }
+        }
+
+        const projects = await grist.docApi.fetchTable(TABLE_PROJECTS);
+        const projectIds = [];
+        const newRefs = [];
+        column(projects, 'id').forEach((id, i) => {
+            const ref = Number(column(projects, COL_UAI)[i]);
+            if (target.has(ref)) {
+                projectIds.push(Number(id));
+                newRefs.push(target.get(ref));
+            }
+        });
+
+        const actions = ready
+            .filter(({ fields }) => Object.keys(fields).length > 0)
+            .map(({ group, fields }) => ['UpdateRecord', TABLE_SCHOOLS, group.keepId, fields]);
+        if (projectIds.length > 0) {
+            actions.push(['BulkUpdateRecord', TABLE_PROJECTS, projectIds, { [COL_UAI]: newRefs }]);
+        }
+        actions.push(['BulkRemoveRecord', TABLE_SCHOOLS, [...target.keys()]]);
+
+        await grist.docApi.applyUserActions(actions);
+        return { merged: ready.length, removed: target.size, skipped };
+    }
+
+    // Deux widgets ouverts en même temps peuvent dupliquer chacun l'année.
+    // Chacun fusionne ensuite les doublons de cette année ; les lignes créées
+    // n'ayant aucun effectif, il n'y a jamais de conflit.
+    async function removeDuplicates(year) {
         try {
-            await grist.docApi.applyUserActions([['BulkRemoveRecord', TABLE_SCHOOLS, extras]]);
+            await mergeDuplicates({ year });
         } catch (error) {
             // L'autre widget les a sans doute déjà supprimées.
             console.info('[Années] Doublons déjà retirés :', (error && error.message) ? error.message : error);
@@ -256,7 +415,9 @@
         TABLE_SCHOOLS,
         currentSchoolYear,
         ensureYear,
-        buildIndex
+        buildIndex,
+        findDuplicates,
+        mergeDuplicates
     };
 
 })(typeof window !== 'undefined' ? window : this);

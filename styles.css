@@ -174,9 +174,46 @@ body {
 
 /* ---------- Carte ---------- */
 
+#map-area {
+    flex: 1;
+    min-width: 0;
+    position: relative;
+    display: flex;
+}
+
 #map {
     flex: 1;
     min-width: 0;
+}
+
+/* Bouton d'aide : même allure que les boutons de zoom de Leaflet. */
+.map-help-btn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 1000;
+    width: 34px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #ffffff59;
+    color: #374151;
+    border: 2px solid rgba(0, 0, 0, .2);
+    border-radius: 4px;
+    background-clip: padding-box;
+    cursor: pointer;
+    transition: background .15s ease, color .15s ease;
+}
+
+.map-help-btn:hover {
+    background-color: #f4f4f4;
+    color: #1a73e8;
+}
+
+.map-help-btn:focus-visible {
+    outline: 2px solid #1a73e8;
+    outline-offset: 2px;
 }
 
 .leaflet-container {
@@ -402,7 +439,8 @@ body {
     cursor: pointer;
 }
 
-#modal-close {
+#modal-close,
+.modal-close {
     background: none;
     border: none;
     cursor: pointer;
@@ -414,12 +452,14 @@ body {
     transition: background .15s ease, color .15s ease;
 }
 
-#modal-close:hover {
+#modal-close:hover,
+.modal-close:hover {
     background: #f3f4f6;
     color: #111827;
 }
 
-#modal-close:focus-visible {
+#modal-close:focus-visible,
+.modal-close:focus-visible {
     outline: 2px solid #1a73e8;
     outline-offset: 1px;
 }
@@ -541,6 +581,115 @@ body {
     font-size: 12px;
     color: #6b7280;
     border-top: 1px solid #e5e7eb;
+}
+
+/* ---------- Modale d'aide ---------- */
+
+.modal-help {
+    width: min(640px, 100%);
+}
+
+.help-body {
+    padding: 4px 20px 20px;
+    line-height: 1.45;
+}
+
+.help-section {
+    padding-top: 16px;
+}
+
+.help-section + .help-section {
+    margin-top: 16px;
+    border-top: 1px solid #e5e7eb;
+}
+
+.help-section h3 {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .02em;
+    color: #4b5563;
+    margin-bottom: 10px;
+}
+
+.help-legend {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.help-legend li {
+    display: grid;
+    grid-template-columns: 104px 1fr;
+    align-items: center;
+    gap: 12px;
+    font-size: 13px;
+    color: #374151;
+}
+
+.help-legend strong {
+    color: #111827;
+    font-weight: 600;
+}
+
+.help-swatches {
+    display: flex;
+    gap: 6px;
+}
+
+.help-swatches .school-marker {
+    flex-shrink: 0;
+}
+
+.help-note {
+    margin-top: 12px;
+    font-size: 12px;
+    color: #6b7280;
+}
+
+.help-list {
+    display: grid;
+    grid-template-columns: minmax(130px, 34%) 1fr;
+    gap: 10px 16px;
+    font-size: 13px;
+}
+
+.help-list dt {
+    font-weight: 600;
+    color: #111827;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+}
+
+.help-list dd {
+    color: #374151;
+}
+
+.help-inline-icon {
+    display: inline-flex;
+    align-self: center;
+    color: #1a73e8;
+}
+
+.help-gradient-dot {
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    background: linear-gradient(90deg, rgb(255, 200, 0) 0%, rgba(0, 180, 0, .9) 50%, rgb(26, 115, 232) 100%);
+    border: 1px solid rgba(26, 115, 232, .8);
+}
+
+@media (max-width: 560px) {
+    .help-legend li,
+    .help-list {
+        grid-template-columns: 1fr;
+    }
+
+    .help-list dt {
+        margin-top: 6px;
+    }
 }
 
 /* ---------- États ---------- */

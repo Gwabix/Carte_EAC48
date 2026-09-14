@@ -549,6 +549,77 @@ input[type="number"]:focus-visible {
     box-shadow: 0 0 0 3px rgba(26, 115, 232, .18);
 }
 
+/* ---------- Écoles en double ---------- */
+
+.banner {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    padding: 8px 12px;
+    font-size: 13px;
+    color: #92400e;
+    background: #fffbeb;
+    border: 1px solid #fcd34d;
+    border-radius: 4px;
+}
+
+.banner[hidden] {
+    display: none;
+}
+
+.banner .link-btn {
+    color: #92400e;
+    font-weight: 600;
+}
+
+.dialog-wide {
+    width: min(560px, calc(100vw - 32px));
+}
+
+.duplicates-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-height: calc(100vh - 260px);
+    overflow-y: auto;
+}
+
+.duplicate-group {
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 10px 12px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.duplicate-group legend {
+    font-size: 13px;
+    font-weight: 600;
+    color: #111827;
+    padding: 0 4px;
+}
+
+.duplicate-choice {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.duplicate-level {
+    min-width: 36px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #4b5563;
+}
+
+.duplicate-choice.is-invalid .duplicate-level {
+    color: #b91c1c;
+}
+
 /* ---------- Erreur de démarrage ---------- */
 
 .boot-error {

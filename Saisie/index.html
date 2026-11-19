@@ -4,6 +4,8 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Origines autorisées (CSP) ; 127.0.0.1:8484 = Grist local de test -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' https://grist.numerique.gouv.fr; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://grist.numerique.gouv.fr http://127.0.0.1:8484; base-uri 'none'; form-action 'none'" />
     <title>Saisie d'un projet artistique</title>
     <link rel="stylesheet" href="styles.css" />
 </head>
@@ -124,7 +126,7 @@
         <span id="boot-error-text"></span>
     </div>
 
-    <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+    <script src="https://grist.numerique.gouv.fr/grist-plugin-api.js"></script>
     <script src="../shared/search-text.js"></script>
     <script src="../shared/grist-columns.js"></script>
     <script src="../shared/school-years.js"></script>

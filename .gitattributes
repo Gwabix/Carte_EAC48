@@ -1,0 +1,3 @@
+# Bibliothèques tierces : stockées octet pour octet, sans conversion des fins
+# de ligne, sinon leur empreinte SRI ne correspond plus (voir lib/LISEZMOI.md).
+lib/** -text

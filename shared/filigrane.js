@@ -16,7 +16,15 @@
  *
  * Deux présentations, choisies par la page avec data-position sur la balise
  * <script> :
- *   - par défaut : ligne centrée à la fin du contenu (pages qui défilent) ;
+ *   - par défaut : ligne centrée à la fin du contenu, mais jamais plus haut
+ *     que le bord inférieur de la fenêtre : si la page tient dans la fenêtre
+ *     filigrane compris, il est collé en bas (classe filigrane-widget--bas) ;
+ *     sinon il suit le contenu. Le test se fait toujours filigrane remis à sa
+ *     place dans le flux, sinon la décision oscillerait. Piège : un conteneur
+ *     en min-height: 100vh repousse le filigrane hors de la fenêtre ; lui
+ *     donner calc(100vh - var(--filigrane-hauteur, 0px)), hauteur publiée ici
+ *     sur :root. Un body en min-height: 100vh n'en a pas besoin (le filigrane
+ *     est dedans) ;
  *   - data-position="fixe" : petite étiquette dans le coin inférieur gauche,
  *     pour les pages en pleine hauteur (carte, applications sans défilement),
  *     où une ligne ajoutée à la fin serait invisible. Elle ne bloque pas les
@@ -43,6 +51,12 @@
 }
 .filigrane-widget a { color: inherit; text-decoration: underline; }
 .filigrane-widget a:hover { color: #2c3e50; }
+.filigrane-widget--bas {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+}
 .filigrane-widget--fixe {
     position: fixed;
     left: 0;
@@ -74,6 +88,26 @@
         const version = VERSION.startsWith('__') ? 'version de développement' : `version du ${VERSION}`;
         pied.append('Widget conçu par Gabriel RUQUET · ', lien, ` · ${version}`);
         document.body.appendChild(pied);
+        if (!fixe) suivreLaHauteur(pied);
+    }
+
+    /** Colle le filigrane en bas de la fenêtre tant que la page y tient. */
+    function suivreLaHauteur(pied) {
+        const racine = document.documentElement;
+        function placer() {
+            pied.classList.remove('filigrane-widget--bas');
+            racine.style.setProperty('--filigrane-hauteur', `${pied.offsetHeight}px`);
+            // 1 px de marge pour les arrondis des hauteurs fractionnaires.
+            const tient = racine.scrollHeight <= racine.clientHeight + 1;
+            pied.classList.toggle('filigrane-widget--bas', tient);
+        }
+        placer();
+        window.addEventListener('resize', placer);
+        // Différé d'une image : placer() change lui-même la taille du body,
+        // ce qui, en direct, ferait signaler une boucle par le navigateur.
+        if (typeof ResizeObserver === 'function') {
+            new ResizeObserver(() => requestAnimationFrame(placer)).observe(document.body);
+        }
     }
 
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ajouter);

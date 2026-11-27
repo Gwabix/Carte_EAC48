@@ -184,6 +184,10 @@ body {
 #map {
     flex: 1;
     min-width: 0;
+    /* Contexte d'empilement propre : les calques de Leaflet (z-index 200 à
+       1000) restent rangés dans la carte, au lieu de passer au-dessus du
+       filigrane fixe (z-index 5) et des autres éléments de la page. */
+    isolation: isolate;
 }
 
 /* Bouton d'aide : même allure que les boutons de zoom de Leaflet. */

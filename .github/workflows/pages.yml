@@ -33,9 +33,18 @@ jobs:
           VERSION="$(git log -1 --format=%cd --date=format-local:'%d/%m/%Y %H:%M') ($(git rev-parse --short=7 HEAD))"
           sed -i "s|__VERSION_WIDGET__|$VERSION|" shared/filigrane.js
           echo "Version publiée : $VERSION"
+      # Liste explicite : seuls les fichiers des deux pages sont publiés (ni
+      # LICENSE, ni .gitignore, ni .gitattributes, ni notes). Un fichier ajouté
+      # au widget doit figurer ici.
+      - name: Fichiers publiés
+        run: |
+          mkdir _site
+          cp -r index.html script.js styles.css Limites_Circos.geojson Limites_Lozere.geojson Saisie shared _site/
+          mkdir -p _site/lib
+          cp -r lib/leaflet-1.9.4 _site/lib/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: _site
       - id: deploiement
         uses: actions/deploy-pages@v4

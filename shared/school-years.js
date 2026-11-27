@@ -87,13 +87,22 @@
         return value !== null && value !== undefined && value !== '';
     }
 
+    // Effectif renseigné : 0 compte comme vide. Grist met 0 dans les colonnes
+    // entières d'une ligne créée sans effectifs ; face à un effectif réel, ce 0
+    // vient presque toujours d'une ligne créée vide (choix du 27/11/2026).
+    function isCountFilled(value) {
+        return isFilled(value) && value !== 0 && value !== '0';
+    }
+
     // Groupes de lignes en double, relus dans la table. La ligne conservée est
     // celle de plus petit identifiant : deux widgets qui fusionnent en même
     // temps retiennent la même et convergent.
     //
     // Pour chaque effectif : une seule valeur renseignée (ou plusieurs
     // identiques) est retenue d'office ; des valeurs différentes forment un
-    // conflit, à trancher par l'utilisateur. Les autres colonnes gardent la
+    // conflit, à trancher par l'utilisateur. Un effectif à 0 compte comme vide
+    // (isCountFilled) : il est complété par l'autre ligne, sans conflit. Les
+    // autres colonnes gardent la
     // valeur de la ligne conservée, complétée si elle est vide.
     function duplicateGroups(data, writable, onlyYear) {
         const ids = column(data, 'id');
@@ -131,7 +140,7 @@
                 const options = [];
                 for (const { id, i } of rows) {
                     const value = data[colId][i];
-                    if (isFilled(value) && !options.some((o) => o.value === value)) {
+                    if (isCountFilled(value) && !options.some((o) => o.value === value)) {
                         options.push({ rowId: id, value });
                     }
                 }

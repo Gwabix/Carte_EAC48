@@ -1176,6 +1176,8 @@
             return;
         }
 
+        // full : lecture de Projets_par_ecole et Ecoles par fetchTable, écriture
+        // des projets par applyUserActions (docApi exige full).
         grist.ready({ requiredAccess: 'full' });
 
         try {

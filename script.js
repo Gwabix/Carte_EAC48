@@ -184,6 +184,27 @@
      * Carte et couches de fond
      * ------------------------------------------------------------- */
 
+    // Anneau extérieur du voile : le monde entier (latitudes limitées à celles
+    // de la projection Web Mercator).
+    const WORLD_RING = [[-85, -180], [-85, 180], [85, 180], [85, -180]];
+
+    // Contours extérieurs du département, en [lat, lng] pour Leaflet
+    // (le GeoJSON donne [lng, lat, alt]). Polygon et MultiPolygon acceptés.
+    function departmentRings(geojson) {
+        const rings = [];
+        for (const feature of geojson?.features || []) {
+            const geometry = feature?.geometry;
+            const polygons = geometry?.type === "Polygon" ? [geometry.coordinates]
+                : geometry?.type === "MultiPolygon" ? geometry.coordinates : [];
+            for (const polygon of polygons) {
+                if (Array.isArray(polygon) && Array.isArray(polygon[0])) {
+                    rings.push(polygon[0].map(([lng, lat]) => [lat, lng]));
+                }
+            }
+        }
+        return rings;
+    }
+
     async function loadMapOverlays() {
         if (!map || overlaysLoaded) {
             return;
@@ -206,14 +227,28 @@
                 circoResponse.json(),
             ]);
 
+            // Voile clair translucide hors du département : un polygone couvrant
+            // le monde, percé de la Lozère, fait ressortir l'intérieur sans
+            // masquer le fond de carte. Ajouté avant le contour, qui reste dessus.
+            const departmentHoles = departmentRings(departmentData);
+            if (departmentHoles.length) {
+                L.polygon([WORLD_RING, ...departmentHoles], {
+                    pane: "overlayPane",
+                    stroke: false,
+                    fillColor: "#f9ffe7",
+                    fillOpacity: 0.6,
+                    interactive: false,
+                }).addTo(map);
+            }
+
             departmentLayer = L.geoJSON(departmentData, {
                 pane: "overlayPane",
                 style: {
                     color: "#1f2937",
                     weight: 2,
                     opacity: 0.85,
-                    fillColor: "#93c5fd",
-                    fillOpacity: 0.08,
+                    fillColor: "#9cfd93",
+                    fillOpacity: 0.1,
                 },
             }).addTo(map);
 
@@ -295,10 +330,19 @@
         }
         map = L.map("map", { zoomSnap: ZOOM_SNAP });
         fitDepartment();
-        L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-            maxZoom: 19,
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-        }).addTo(map);
+        // Fond Plan IGN de la Géoplateforme (IGN, service public français, sans
+        // clé ni quota) plutôt que les tuiles OpenStreetMap : l'adresse IP des
+        // utilisateurs ne part plus vers un tiers étranger (RGPD). Tuiles natives
+        // jusqu'au zoom 18, agrandies au-delà. Origine autorisée dans la CSP
+        // (img-src https://data.geopf.fr).
+        L.tileLayer(
+            "https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0" +
+            "&LAYER=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&STYLE=normal&FORMAT=image/png" +
+            "&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}", {
+                maxZoom: 19,
+                maxNativeZoom: 18,
+                attribution: '&copy; <a href="https://www.ign.fr/">IGN</a> &ndash; Plan IGN',
+            }).addTo(map);
         markersLayer = L.layerGroup().addTo(map);
         watchUserMoves();
         void loadMapOverlays();
@@ -1474,6 +1518,8 @@
 
         window.addEventListener("resize", refreshMapSize);
 
+        // full : lecture de Ecoles et Projets_par_ecole par fetchTable (docApi
+        // exige full, même sans écriture).
         grist.ready({
             requiredAccess: "full",
             columns: [
